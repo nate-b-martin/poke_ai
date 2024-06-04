@@ -33,3 +33,7 @@ class PokeAPI:
         resistances = pd.pokemon(pokemon.lower()).resistances
         resistance_types = [resistance.type.name for resistance in resistances]
         return resistance_types
+    
+if __name__ == "__main__":
+    api = PokeAPI()
+    print(api.get_moves("pikachu"))

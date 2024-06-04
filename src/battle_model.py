@@ -24,6 +24,7 @@ class BattleModel:
                 {pokemon_one}, {pokemon_two}
                 """
             ),
+            ("human", "{user_input}"),
             MessagesPlaceholder(variable_name="messages")
         ])
         self.chain = self.prompt | self.model

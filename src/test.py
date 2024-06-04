@@ -26,6 +26,7 @@ pokemon_one_obj = {
     # "resistances": pokeAPI.get_resistances(pokemon_one)
 }
 
+
 print(f"{pokemon_one_obj['name']} has the following moves: {pokemon_one_obj['moves']}")
 pokemon_two_obj = {
     "name": pokemon_two,

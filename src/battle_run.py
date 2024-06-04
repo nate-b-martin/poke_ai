@@ -15,11 +15,38 @@ from battle_model import BattleModel
 # Initialize the model
 model = BattleModel(model_name="lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF", api_key="lm-studio", temperature=0.7)
 
-response: BaseMessage = model.with_message_history.invoke(
-    {"messages":[HumanMessage(content="Lets Battle.")], "pokemon_one": "charizard", "pokemon_two": "dragonite"},
-    config=model.config
-    )
+# response: BaseMessage = model.with_message_history.invoke(
+#     {"messages":[HumanMessage(content="Lets Battle.")], "pokemon_one": "charizard", "pokemon_two": "dragonite"},
+#     config=model.config
+#     )
 
-print(response.content)
+# Chat history
+chat_history = ChatMessageHistory()
+
+# initial response
+user_input = " "
+for r in model.with_message_history.stream(
+    {"messages": chat_history.messages,
+        "pokemon_one":"charizard",
+    "pokemon_two":"dragonite",
+    "user_input": user_input}, config=model.config):
+    print(r.content, end="")
+
+while True:
+    user_input = str(input("> "))
+
+    chat_history.add_user_message(user_input)
+
+    if user_input == "exit":
+        break
+
+    for r in model.with_message_history.stream(
+        {"messages": chat_history.messages,
+         "pokemon_one":"charizard",
+        "pokemon_two":"dragonite",
+        "user_input": user_input}, config=model.config):
+    # Stream responses
+        print(r.content, end="")
+
 
 
