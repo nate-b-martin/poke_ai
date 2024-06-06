@@ -1,0 +1,10 @@
+Include/*
+Lib/*
+bin
+lib64
+Scripts/*
+pyvenv.cfg
+share
+include
+lib
+src/__pycache__
