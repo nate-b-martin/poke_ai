@@ -1,18 +1,13 @@
-import bs4
 from langchain_openai import ChatOpenAI
 from langchain import hub
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import WebBaseLoader, JSONLoader 
+from langchain_community.document_loaders import JSONLoader 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-import getpass
 import os
 import json
-from jsonschema import validate, ValidationError
-
-os.environ["OPENAI_API_KEY"] = getpass.getpass()
 
 # Initialize LLM
 llm = ChatOpenAI(model_name="lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF",base_url="http://localhost:1234/v1", api_key="lm-studio", temperature=0.7)
@@ -33,7 +28,7 @@ splits = text_splitter.split_documents(poke_data)
 print(len(splits))
 
 # Initialize embeddings
-embeddings = OpenAIEmbeddings(api_key=os.environ["OPENAI_API_KEY"])
+embeddings = OpenAIEmbeddings(api_key=os.environ.get('OPENAI_API_KEY'))
 
 
 # Initialze vectore store
@@ -55,14 +50,10 @@ rag_chain = (
     | StrOutputParser()
 )
 
-# response = rag_chain.invoke("What is task decomposition?")
-# print(response)
 
-response = rag_chain.invoke("What are the names of all the pokemon?")
-print(response)
-
-response = rag_chain.invoke("What is Charmander's attack stat?")
-print(response)
-
-response = rag_chain.invoke("What are bulbasaur's abilities?")
-print(response)
+while True:
+    user_input = str(input("> "))
+    if user_input == "exit":
+        break
+    response = rag_chain.invoke(user_input)
+    print(response)
