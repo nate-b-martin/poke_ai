@@ -33,7 +33,22 @@ class PokeAPI:
         resistances = pd.pokemon(pokemon.lower()).resistances
         resistance_types = [resistance.type.name for resistance in resistances]
         return resistance_types
-    
+
+    def get_pokemon(self, pokemon):
+        current_pokemon = pd.pokemon(pokemon.lower())
+        return {
+            "name": current_pokemon.name,
+            "id": current_pokemon.id,
+            "height": current_pokemon.height,
+            "weight": current_pokemon.weight,
+            "base_experience": current_pokemon.base_experience,
+            "stats": self.get_stats(current_pokemon.name),
+            "abilities": self.get_abilities(current_pokemon.name),
+            "moves": self.get_moves(current_pokemon.name)
+        }
+
 if __name__ == "__main__":
     api = PokeAPI()
-    print(api.get_moves("pikachu"))
+    pikachu = api.get_pokemon("pikachu")
+    print(pikachu)
+    

@@ -8,3 +8,6 @@ share
 include
 lib
 src/__pycache__
+src/test_data
+src/pokemon_data
+db

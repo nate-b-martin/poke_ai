@@ -1,5 +1,9 @@
 from langchain_openai import ChatOpenAI
 from langchain import hub
+from langchain.chains import history_aware_retriever
+from langchain.chains import conversational_retrieval
+from langchain_core.prompts import MessagesPlaceholder
+from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import JSONLoader 
 from langchain_core.output_parsers import StrOutputParser
@@ -8,6 +12,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import os
 import json
+
 
 # Initialize LLM
 llm = ChatOpenAI(model_name="lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF",base_url="http://localhost:1234/v1", api_key="lm-studio", temperature=0.7)
@@ -49,7 +54,6 @@ rag_chain = (
     | llm
     | StrOutputParser()
 )
-
 
 while True:
     user_input = str(input("> "))
