@@ -1,19 +1,17 @@
 
-from langchain_core.messages import HumanMessage, AIMessage
+# from langchain_core.messages import HumanMessage
 from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+# from langchain_core.runnables.history import RunnableWithMessageHistory
+# from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings, OpenAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader, DirectoryLoader
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate, FewShotChatMessagePromptTemplate
 from poke_api import PokeAPI
 import os
 import json
@@ -33,19 +31,21 @@ class BattleModel:
             (
                 "system",
                 """
-                You are the number one pokemon battle referee and have the knowledge of all pokemon. You offer detailed play by play commentary of pokemon battles in a clear, impartial and engaging way. You will keep track of each pokemon's health and attack and once a pokemon reaches 0 health you will end the battle. Please keep your responses focused on the simulated battle at hand. After each move you will ask the user what you want to do next providing four options for their next move alternating between each pokemon giving them an option to do something.
-
-                We will begin the battle and the pokemon that are battle are provided in the context provided: {context}
+                You are simulating a pokemon battle. You are given two pokemon provided by the context: {context}.
+                You will use this information to keep track of pokemon health, move affects, and abilities. You will follow the traditional pokemon battle format. Each pokemon will have four moves that you will provide to the user so they can choose which move they want to use.
                 """
             ),
-            ("human", "{input}"),
+            ("ai", f"Lets begin! What is {self.pokemon_one}'s first move?"),
+            ("human", "{input}")
             # MessagesPlaceholder(variable_name="messages")
         ])
+        self.final_prompt = self.create_final_prompt()
         # self.chain = self.prompt | self.model
         # self.parser = StrOutputParser()
         # self.store = {}
         # self.config = {"configurable": {"session_id": "abc2"}}
         # self.with_message_history = RunnableWithMessageHistory(self.chain, self.get_session_history, input_messages_key="messages")
+
 
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
         if session_id not in self.store:
@@ -76,7 +76,7 @@ class BattleModel:
 
         ## here we are using OpenAI embeddings but in the future we will swap out to local embeddings 
         embedding = OpenAIEmbeddings()
-        vector_db = Chroma.from_documents(documents=texts, embedding=embedding,persist_directory=persist_directory)
+        vector_db = Chroma.from_documents(documents=texts, embedding=embedding)
         
         # Now we can load the persisted database from disk, and use it as normal
         # vector_db = Chroma(persist_directory=persist_directory, embedding_function=embedding)
@@ -90,7 +90,7 @@ class BattleModel:
 
     def process_llm_response(self, response):
         print(f'\n\nAnswer: {response["answer"]}')
-        print(f"\n\n{response['context'][0]}")
+        # print(f"\n\n{response['context'][0]}")
         # print('\n\nSources:')
         # for metadata in response['context']:
         #     print(metadata.metadata)
@@ -98,7 +98,12 @@ class BattleModel:
 if __name__ == "__main__":
     model = BattleModel()
 
-    question_answer_chain = create_stuff_documents_chain(llm=OpenAI(), prompt=model.prompt)
+    question_answer_chain = create_stuff_documents_chain(llm=OpenAI(), prompt=model.final_prompt)
     chain = create_retrieval_chain(model.retriever, question_answer_chain)
-    llm_response = chain.invoke({"input": "What pokemon are going to battle?"})
-    model.process_llm_response(llm_response)
+    while True:
+        user_input = str(input("> "))
+        if user_input == "exit":
+            break
+        llm_response = chain.invoke({"input":user_input})
+        model.process_llm_response(llm_response)
+

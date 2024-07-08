@@ -1,79 +1,114 @@
-from langchain_community.vectorstores import Chroma
-from langchain_community.llms.ollama import Ollama
-from langchain_community.embeddings.ollama import OllamaEmbeddings
-from langchain_openai import OpenAIEmbeddings, OpenAI
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains.retrieval_qa.base import RetrievalQA 
-from langchain_community.document_loaders import TextLoader, DirectoryLoader
+import bs4
+from langchain import hub
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain.chains.history_aware_retriever import create_history_aware_retriever
+from langchain_chroma import Chroma
+from langchain_community.document_loaders import TextLoader, DirectoryLoader 
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_openai import OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
+from langchain_community.llms.ollama import Ollama
+from langchain.memory.buffer_window import ConversationBufferWindowMemory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from poke_api import PokeAPI
+import os
+import json
 
-system_prompt = (
-    """
-    You are a pokemon battle referee and commentating the battle. Using the context provided, please comment on the battle status. Context: {context}. Keep in mind that we want the user to choose what happens after each move alternating between each pokemon. Also please provide a list of four possible options based off the context provided for the user to pick. We also want to keep track of the pokemon's health after each attack.
-    """
-)
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", system_prompt),
-        ("human", "{input}"),
-    ]
-)
+class PokeBot:
+    def __init__(self):
+        self.llm = Ollama(model="llama3", base_url="http://localhost:11434", temperature=0.7)
+        self.system_prompt = (
+            """
+            You are a pokemon battle referee and commentating the battle. Using the context provided, please comment on the battle status. Context: {context}. Keep in mind that we want the user to choose what happens after each move alternating between each pokemon. Also please provide a list of four possible options based off the context provided for the user to pick. We also want to keep track of the pokemon's health after each attack.    
+            """
+        )
+        self.prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", self.system_prompt),
+                ("human", "{input}"),
+            ]
+        )
 
-store = {}
-config = {"configurable": {"session_id": "abc2"}}
+        self.contextualize_q_system_prompt = (
+            "Given a chat history and the latest user question "
+            "which might reference context in the chat history, "
+            "formulate a standalone question which can be understood "
+            "without the chat history. Do NOT answer the question, "
+            "just reformulate it if needed and otherwise return it as is."
+        )
 
-client = Ollama(model="llama3", base_url="http://localhost:11434", temperature=0.7)
+        self.contextualize_q_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", self.contextualize_q_system_prompt),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ]
+        )
 
-# Load and process the text files
-loader = DirectoryLoader('/home/nathan/Documents/Projects/poke_ai/.venv/src/pokemon_data', glob="**/*.json", loader_cls=TextLoader)
+        self.qa_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", self.system_prompt),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ]
+        )
 
-# loader = DirectoryLoader('/home/nathan/Documents/Projects/poke_ai/.venv/src/test data ', loader_cls=TextLoader)
-document = loader.load()
+        self.load_pokemon_data()
 
-# splitting the text into chunks
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-texts = text_splitter.split_documents(document)
+        loader = DirectoryLoader('/home/nathan/Documents/Projects/poke_ai/.venv/src/pokemon_data', glob="**/*.json", loader_cls=TextLoader)
+        self.document = loader.load()
+        self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        self.texts = self.text_splitter.split_documents(self.document)
+        self.embedding = OllamaEmbeddings(model="llama3", base_url="http://localhost:11434",temperature=0.7)
+        self.vector_db = Chroma.from_documents(documents=self.texts, embedding=self.embedding)
+        self.retriever = self.vector_db.as_retriever()
+        self.retriever.search_kwargs = {"k": 2}
+        self.history_aware_retriever = create_history_aware_retriever(
+            self.llm, self.retriever, self.contextualize_q_prompt
+        )
+        self.chat_history = []
+        self.question_answer_chain = create_stuff_documents_chain(llm=self.llm, prompt=self.qa_prompt)
+        self.rag_chain = create_retrieval_chain(self.history_aware_retriever, self.question_answer_chain)
 
-# CREATE The Chroma VectorStore
-# embed and store the texts
-# supplying a persist_directory will store the embeddings on disk
-persist_directory = 'db'
+    def process_llm_response(self, response):
+        print(f'\n\nAnswer: {response["answer"]}')
+        # print(f"\n\n{response['context'][0]}")
+        # print('\n\nSources:')
+        # for metadata in response['context']:
+        #     print(metadata.metadata)
 
-## here we are using OpenAI embeddings but in the future we will swap out to local embeddings 
-# embedding = OpenAIEmbeddings()
-embedding = OllamaEmbeddings(model="llama3", base_url="http://localhost:11434",temperature=0.7)
-vector_db = Chroma.from_documents(documents=texts, embedding=embedding,persist_directory=persist_directory)
+    def answer_question(self, question):
+        llm_response = self.rag_chain.invoke({"input":question, "chat_history": self.chat_history})
+        self.chat_history.extend([
+            HumanMessage(content=question),
+            AIMessage(content=llm_response['answer']),
+        ])
+        self.process_llm_response(llm_response)
 
-# Now we can load the persisted database from disk, and use it as normal
+    def load_pokemon_data(self):
+        pokemon_one = str(input("Pokemon 1: "))
+        pokemon_two = str(input("Pokemon 2: "))
+        api = PokeAPI()
+        pokemon_data_list = [api.get_pokemon(pokemon_one), api.get_pokemon(pokemon_two)]
 
-# make a retriever
-retriever = vector_db.as_retriever()
-retriever.search_kwargs = {"k": 2}
+        current_dir = os.path.dirname(__file__)
+        test_data_dir = os.path.join(current_dir, "pokemon_data")
+        os.makedirs(test_data_dir, exist_ok=True)
+        with open(os.path.join(test_data_dir, "pokemon_data_list.json"), "w") as f:
+            json.dump(pokemon_data_list, f, indent=4)
 
-# Make a chain
 
-## cite sources
-def process_llm_response(response):
-    print(f'\n\nAnswer: {response["answer"]}')
-    # print(f"\n\n{response['context'][0]}")
-    # print('\n\nSources:')
-    # for metadata in response['context']:
-    #     print(metadata.metadata)
+    def run(self):
+        self.answer_question("let the battle begin!")
+        while True:
+            user_input = str(input("> "))
+            if user_input == "exit":
+                break
+            self.answer_question(user_input)
 
-# create the cahin to answer questions
-question_answer_chain = create_stuff_documents_chain(llm=client, prompt=prompt)
-chain = create_retrieval_chain(retriever, question_answer_chain)
-llm_response = chain.invoke({"input": "let the battle begin"})
-process_llm_response(llm_response)
-
-while True:
-    user_input = str(input("> "))
-    if user_input == "exit":
-        break
-    # chain = create_retrieval_chain(retriever, question_answer_chain)
-    llm_response = chain.invoke({"input": user_input})
-    process_llm_response(llm_response)
+if __name__ == "__main__":
+    PokeBot().run()
 
